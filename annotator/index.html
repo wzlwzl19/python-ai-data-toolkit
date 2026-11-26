@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<style>
+body{margin:0;font:15px system-ui;color:#142f29}
+canvas{display:block;max-width:100%;height:auto;touch-action:none;cursor:crosshair;border-radius:8px}
+button,input{font:inherit;padding:.45rem .65rem;border:1px solid #93aaa2;border-radius:5px;background:white}
+button{cursor:pointer} form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+</style>
+<canvas aria-label="Drag over the image to draw a bounding box"></canvas>
+<form>
+<label>Label <input required maxlength="60" placeholder="e.g. backpack"></label>
+<button type="submit">Add box</button>
+<button type="button" id="undo">Undo last box</button>
+<output role="status"></output>
+</form>
+<script>
+const canvas = document.querySelector('canvas'), context = canvas.getContext('2d');
+const image = new Image(), input = document.querySelector('input');
+const status = document.querySelector('output');
+let source, width, height, boxes = [], start, draft;
+function send(type, extra = {}) {
+  parent.postMessage({isStreamlitMessage: true, type, ...extra}, '*');
+}
+function resize() {
+  send('streamlit:setFrameHeight', {height: Math.ceil(document.body.getBoundingClientRect().height) + 18});
+}
+function drawBox(box, color) {
+  const scale = canvas.width / width, x = box.x * scale, y = box.y * scale;
+  context.lineWidth = 3; context.strokeStyle = color;
+  context.strokeRect(x, y, box.width * scale, box.height * scale);
+  if (box.label) {
+    context.font = 'bold 14px system-ui';
+    const size = context.measureText(box.label).width + 12, top = Math.max(y - 23, 0);
+    context.fillStyle = color; context.fillRect(x, top, size, 23);
+    context.fillStyle = '#142f29'; context.fillText(box.label, x + 6, top + 16);
+  }
+}
+function paint() {
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  boxes.forEach(box => drawBox(box, '#7fffc5'));
+  if (draft) drawBox(draft, '#ffe36c');
+}
+function position(event) {
+  const rect = canvas.getBoundingClientRect();
+  return [Math.max(0, Math.min(width, Math.round((event.clientX - rect.left) / rect.width * width))),
+          Math.max(0, Math.min(height, Math.round((event.clientY - rect.top) / rect.height * height)))];
+}
+canvas.onpointerdown = event => {
+  if (!image.complete || !image.naturalWidth || event.button !== 0 || !event.isPrimary) return;
+  canvas.setPointerCapture(event.pointerId); start = position(event); draft = null; paint();
+};
+canvas.onpointermove = event => {
+  if (!start || !event.isPrimary) return;
+  const [x, y] = position(event);
+  draft = {x:Math.min(x,start[0]), y:Math.min(y,start[1]),
+           width:Math.abs(x-start[0]), height:Math.abs(y-start[1])};
+  paint();
+};
+canvas.onpointerup = event => { canvas.onpointermove(event); start = null; };
+canvas.onpointercancel = () => { start = null; draft = null; paint(); };
+function save() {
+  send('streamlit:setComponentValue', {value:boxes, dataType:'json'});
+  status.value = boxes.length + ' saved'; paint();
+}
+document.querySelector('form').onsubmit = event => {
+  event.preventDefault();
+  if (!draft?.width || !draft?.height) { status.value = 'Draw a box first.'; return; }
+  if (!input.value.trim()) { status.value = 'Enter a label.'; return; }
+  if (boxes.length >= 200) { status.value = 'Limit reached: 200 boxes.'; return; }
+  boxes = [...boxes, {...draft, label:input.value.trim()}]; draft = null; save();
+};
+document.getElementById('undo').onclick = () => { boxes = boxes.slice(0,-1); draft = null; save(); };
+window.addEventListener('message', event => {
+  if (event.source !== parent || event.data.type !== 'streamlit:render') return;
+  const args = event.data.args;
+  if (args.source !== source) {
+    source = args.source; width = args.width; height = args.height; boxes = args.boxes || [];
+    start = draft = null;
+    image.onload = () => {
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight; paint(); resize();
+    };
+    image.src = source;
+  }
+  resize();
+});
+new ResizeObserver(resize).observe(document.body);
+send('streamlit:componentReady', {apiVersion:1}); resize();
+</script>
+</html>
+
