@@ -1,0 +1,12 @@
+streamlit>=1.40,<2
+pandas>=2.2,<3
+beautifulsoup4>=4.12,<5
+Pillow>=10,<12
+pypdf>=5,<7
+langchain>=0.3,<2
+langchain-text-splitters>=0.3,<2
+transformers>=4.45,<5
+torch>=2.2,<3
+numpy>=1.26,<3
+html5lib>=1.1,<2
+
